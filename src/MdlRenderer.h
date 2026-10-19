@@ -84,6 +84,7 @@ public:
 	int drawBody;
 	float drawFrame = 0;
 	uint64_t lastDrawCall = 0;
+	bool animate = true; // false: draw() keeps drawFrame as set (posed images)
 
 	MdlRenderer(ShaderProgram* shader, ShaderProgram* wireShader, bool legacy_mode, string modelPath);
 	~MdlRenderer();
@@ -96,6 +97,10 @@ public:
 	void getModelBoundingBox(vec3 angles, int sequence, vec3& mins, vec3& maxs);
 
 	bool isStudioModel() { return true; };
+
+	// sequence index from an index or a label (case-insensitive), -1 if the model has no such sequence
+	int findSequence(string nameOrIndex);
+	bool getSequenceInfo(int seq, float& fps, int& numframes);
 
 	void loadData();
 

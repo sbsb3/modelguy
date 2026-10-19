@@ -11,6 +11,11 @@
 #include <float.h>
 #include "Renderer.h"
 #include <cstring>
+#ifdef _WIN32
+#define strcasecmp _stricmp
+#else
+#include <strings.h>
+#endif
 
 void glCheckError(const char* checkMessage);
 
@@ -774,6 +779,33 @@ mstudioseqdesc_t* MdlRenderer::getSequence(int seq) {
 	return (mstudioseqdesc_t*)data.get();
 }
 
+int MdlRenderer::findSequence(string nameOrIndex) {
+	if (!valid || nameOrIndex.empty()) {
+		return -1;
+	}
+	if (nameOrIndex.find_first_not_of("0123456789") == string::npos) {
+		int idx = atoi(nameOrIndex.c_str());
+		return idx < header->numseq ? idx : -1;
+	}
+	for (int i = 0; i < header->numseq; i++) {
+		mstudioseqdesc_t* seq = getSequence(i);
+		if (seq && strcasecmp(seq->label, nameOrIndex.c_str()) == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+bool MdlRenderer::getSequenceInfo(int seq, float& fps, int& numframes) {
+	if (!valid || seq < 0 || seq >= header->numseq) {
+		return false;
+	}
+	mstudioseqdesc_t* desc = getSequence(seq);
+	fps = desc->fps;
+	numframes = desc->numframes;
+	return true;
+}
+
 void MdlRenderer::CalcBoneAdj()
 {
 	data.seek(header->bonecontrollerindex);
@@ -1420,7 +1452,7 @@ void MdlRenderer::draw(vec3 origin, vec3 angles, EntRenderOpts& opts, vec3 viewe
 
 	opts.sequence = clamp(opts.sequence, 0, header->numseq - 1);
 	mstudioseqdesc_t* seq = getSequence(opts.sequence);
-	if (seq && seq->numframes > 1) {
+	if (seq && seq->numframes > 1 && animate) {
 		drawFrame += seq->fps * deltaTime;
 		drawFrame = normalizeRangef(drawFrame, 0.0f, seq->numframes - 1);
 	}

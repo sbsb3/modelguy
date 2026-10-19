@@ -250,12 +250,40 @@ int view_model(string inputFile) {
 	return 0;
 }
 
-int image_model(string inputFile, string outputFile, int width, int height) {
+struct PoseOpts {
+	string seq; // index or label; empty = the old single picture
+	float start = 0;
+	float end = 0;
+	int frames = 1;
+	string fit;
+	float margin = 1.0f;
+};
+
+int image_model(string inputFile, string outputFile, int width, int height, PoseOpts& pose) {
 	bool legacy = true;
 	bool headless = true;
 	Renderer renderer = Renderer(inputFile, width, height, legacy, headless);
-	renderer.create_image(outputFile);
-	return 0;
+	if (pose.seq.empty() && pose.fit.empty() && pose.margin == 1.0f) {
+		renderer.create_image(outputFile);
+		return 0;
+	}
+	if (!renderer.mdlRenderer) {
+		return 1;
+	}
+	int seq = pose.seq.empty() ? 0 : renderer.mdlRenderer->findSequence(pose.seq);
+	if (seq < 0) {
+		fprintf(stderr, "Model has no sequence %s\n", pose.seq.c_str());
+		return 2;
+	}
+	if (!pose.fit.empty()) {
+		renderer.fitSequence = renderer.mdlRenderer->findSequence(pose.fit);
+		if (renderer.fitSequence < 0) {
+			fprintf(stderr, "Model has no sequence %s\n", pose.fit.c_str());
+			return 2;
+		}
+	}
+	renderer.fitMargin = pose.margin;
+	return renderer.create_strip(outputFile, seq, pose.start, pose.end, pose.frames);
 }
 
 #ifndef __EMSCRIPTEN__
@@ -274,6 +302,7 @@ int main(int argc, char* argv[])
 	bool force = false;
 	bool noanim = false;
 	int maxpixels = 512*512;
+	PoseOpts pose;
 
 	bool expectPaletteFile = false;
 	for (int i = 0; i < argc; i++)
@@ -311,6 +340,16 @@ int main(int argc, char* argv[])
 			if (command == "image") {
 				if (i == 4) {
 					outputFile = arg;
+				}
+				else if (i > 4 && eq != string::npos) {
+					string key = larg.substr(0, eq);
+					string val = arg.substr(eq + 1);
+					if (key == "seq") pose.seq = val;
+					else if (key == "start") pose.start = atof(val.c_str());
+					else if (key == "end") pose.end = atof(val.c_str());
+					else if (key == "frames") pose.frames = atoi(val.c_str());
+					else if (key == "fit") pose.fit = val;
+					else if (key == "margin") pose.margin = atof(val.c_str());
 				}
 			}
 			if (command == "downscale") {
@@ -366,6 +405,8 @@ int main(int argc, char* argv[])
 			"  type      : Identify player model type. The return code is unique per mod.\n"
 			"  view      : View the model in 3D.\n"
 			"  image     : Saves a PNG image of the model. Takes <width>x<height> and <output.png> as parameters.\n"
+			"              Optional seq=<index|name> start=<0-255> end=<0-255> frames=<max> fit=<index|name> margin=<scale>:\n"
+			"              those frames of a sequence side by side (camera fitted on the fit sequence), JSON info on stdout.\n"
 			"  layout    : Show data layout for the MDL file.\n"
 			"  downscale : Downscale all textures to the given max pixel count.\n"
 			"  optimize  : deduplicate data.\n\n"
@@ -527,7 +568,7 @@ int main(int argc, char* argv[])
 		if (outputFile.size() == 0 || outputFile == inputFile) {
 			outputFile = replaceString(inputFile, ".mdl", ".png");
 		}
-		return image_model(inputFile, outputFile, cropWidth, cropHeight);
+		return image_model(inputFile, outputFile, cropWidth, cropHeight, pose);
 	}
 	else {
 		cout << "unrecognized command: " << command << endl;

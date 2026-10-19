@@ -26,6 +26,13 @@ public:
 
 	void create_image(string outPath);
 
+	// Renders frames [startFrame, endFrame] (0-255, like pev.frame) of a sequence side by side into one PNG,
+	// at most maxFrames evenly spaced ones, and prints {"frames","fps","w","h"} as JSON. Returns a process exit code.
+	int create_strip(string outPath, int sequence, float startFrame, float endFrame, int maxFrames);
+
+	int fitSequence = -1; // sequence whose bounds place the camera (-1 = the one rendered)
+	float fitMargin = 1.0f; // >1 zooms out from that fit
+
 	void setup_render();
 
 	void render();

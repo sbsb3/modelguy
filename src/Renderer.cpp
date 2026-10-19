@@ -332,12 +332,14 @@ void Renderer::drawBoxOutline(vec3 center, vec3 mins, vec3 maxs, COLOR4 color) {
 void Renderer::get_model_fit_offsets(vec3 modelOrigin, vec3 modelAngles, float& depthOffset, float& heightOffset) {
 	vec3 mins(FLT_MAX, FLT_MAX, FLT_MAX);
 	vec3 maxs(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-	mdlRenderer->getModelBoundingBox(modelAngles, renderOpts.sequence, mins, maxs);
+	mdlRenderer->getModelBoundingBox(modelAngles, fitSequence >= 0 ? fitSequence : renderOpts.sequence, mins, maxs);
 	mins = mins.flip();
 	maxs = maxs.flip();
 
 	float targetWidth = max(fabs(maxs.x), fabs(mins.x)) * 2;
 	float targetHeight = maxs.y - mins.y;
+	targetWidth *= fitMargin;
+	targetHeight *= fitMargin;
 
 	// draw bounding box
 	//colorShader->bind();
@@ -396,7 +398,8 @@ void Renderer::render() {
 		dt = 0;
 	}
 
-	modelAngles.y = normalizeRangef(modelAngles.y + dt*50, 0, 360);
+	if (mdlRenderer->animate)
+		modelAngles.y = normalizeRangef(modelAngles.y + dt*50, 0, 360);
 	//modelAngles.x = normalizeRangef(modelAngles.x + 0.5f, 0, 360);
 	/*
 	if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
@@ -456,4 +459,57 @@ void Renderer::create_image(string outPath) {
 #else
 	lodepng_encode32_file(outPath.c_str(), mesa3d_buffer, windowWidth, windowHeight);
 #endif
+}
+
+int Renderer::create_strip(string outPath, int sequence, float startFrame, float endFrame, int maxFrames) {
+	if (!valid) {
+		printf("Aborting render. Context creation failed.\n");
+		return 1;
+	}
+	float seqFps;
+	int numframes;
+	if (!mdlRenderer || !mdlRenderer->getSequenceInfo(sequence, seqFps, numframes)) {
+		fprintf(stderr, "No sequence %d\n", sequence);
+		return 2;
+	}
+	setup_render(); // clears renderOpts
+	renderOpts.sequence = sequence;
+	mdlRenderer->animate = false;
+
+	float first = clamp(startFrame, 0.0f, 255.0f) / 255.0f * (numframes - 1);
+	float last = clamp(endFrame, 0.0f, 255.0f) / 255.0f * (numframes - 1);
+	int count = (int)fabs(last - first) + 1;
+	count = clamp(count, 1, max(1, maxFrames));
+	float step = count > 1 ? (last - first) / (count - 1) : 0;
+
+	int stripWidth = windowWidth * count;
+	uint8_t* strip = new uint8_t[stripWidth * windowHeight * 4];
+	for (int i = 0; i < count; i++) {
+		mdlRenderer->drawFrame = first + step * i;
+		render();
+		glFlush();
+#if defined(WIN32) || defined(__EMSCRIPTEN__)
+		uint8_t* pixels = new uint8_t[windowWidth * windowHeight * 4];
+		glReadPixels(0, 0, windowWidth, windowHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+#else
+		uint8_t* pixels = mesa3d_buffer;
+#endif
+		for (int y = 0; y < windowHeight; y++) {
+			memcpy(strip + (y * stripWidth + i * windowWidth) * 4, pixels + y * windowWidth * 4, windowWidth * 4);
+		}
+#if defined(WIN32) || defined(__EMSCRIPTEN__)
+		delete[] pixels;
+#endif
+	}
+	unsigned err = lodepng_encode32_file(outPath.c_str(), strip, stripWidth, windowHeight);
+	delete[] strip;
+	if (err) {
+		fprintf(stderr, "PNG write failed: %s\n", lodepng_error_text(err));
+		return 1;
+	}
+
+	// strip frames per second: the sequence's fps over the frames skipped per cell
+	float fps = count > 1 ? seqFps / max(fabs(step), 1e-3f) : 0;
+	printf("{\"frames\":%d,\"fps\":%.3f,\"w\":%d,\"h\":%d}\n", count, fps, windowWidth, windowHeight);
+	return 0;
 }
