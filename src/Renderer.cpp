@@ -352,6 +352,8 @@ void Renderer::get_model_fit_offsets(vec3 modelOrigin, vec3 modelAngles, float& 
 	float i_height = targetHeight / (2.0f * tanHalfFov);
 
 	depthOffset = mins.z + max(i_width, i_height);
+	fitUnits = 2.0f * tanHalfFov * max(i_width, i_height);
+	fitFloor = fitUnits > 0 ? 0.5f - (maxs.y - mins.y) * 0.5f / fitUnits : 0;
 	heightOffset = -(mins.y + (maxs.y - mins.y)*0.5f);
 }
 
@@ -510,6 +512,6 @@ int Renderer::create_strip(string outPath, int sequence, float startFrame, float
 
 	// strip frames per second: the sequence's fps over the frames skipped per cell
 	float fps = count > 1 ? seqFps / max(fabs(step), 1e-3f) : 0;
-	printf("{\"frames\":%d,\"fps\":%.3f,\"w\":%d,\"h\":%d}\n", count, fps, windowWidth, windowHeight);
+	printf("{\"frames\":%d,\"fps\":%.3f,\"w\":%d,\"h\":%d,\"units\":%.2f,\"floor\":%.4f}\n", count, fps, windowWidth, windowHeight, fitUnits, fitFloor);
 	return 0;
 }
